@@ -1,0 +1,387 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{parskip}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+\title{\textbf{Computer Vision 1 \\ Final Laboratory Part 2 Report} \\[6pt]
+\large University of Amsterdam}
+
+\author{
+\begin{tabular}{lll}
+\textbf{Student Name} & \textbf{Student ID} \\
+Ippokratis Pantelidis & 16124006 \\
+Robert-Ştefan Sofroni & 16300645 \\
+Andor Károly Bodgál & 14339617 \\
+\end{tabular}
+}
+
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\vspace{1cm}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{figures/cover-image.pdf}
+\end{figure}
+
+\newpage
+\tableofcontents
+\newpage
+
+\newpage
+
+% ============================================================
+\section{Introduction}
+
+This second part of the laboratory project focuses on designing an image classification system using \textit{Convolutional Neural Networks} (CNNs), building upon the first part that employed a classical Bag of Visual Words (BoVW) approach.
+
+Experiments are conducted on the \textbf{CIFAR-100} dataset, containing 60,000 color images ($32\times32$ pixels) across 100 categories, and later on a subset of the higher-resolution \textbf{STL-10} dataset. Two architectures are implemented:
+\begin{itemize}[noitemsep]
+    \item \textbf{TwoLayerNet} – a simple fully connected network with ReLU activation.
+    \item \textbf{ConvNet} – a LeNet-5–inspired CNN adapted for RGB images.
+\end{itemize}
+
+Both models are trained from scratch on CIFAR-100 using PyTorch, with extensive hyperparameter tuning (learning rate, batch size, weight decay, optimizer) to improve accuracy and generalization. Techniques such as Dropout and Batch Normalization are also tested to stabilize training and reduce overfitting.
+
+Finally, the pre-trained ConvNet is \textbf{fine-tuned on a five-class subset of STL-10} (\textit{bird, deer, dog, horse, monkey}) by replacing the final layer and retraining on the new data. Performance is assessed through accuracy metrics and feature visualization using t-SNE.
+
+% ============================================================
+% METHODOLOGY
+% ============================================================
+\section{Methodology}
+\subsection{Data Preparation}
+
+The experiments use the \textbf{CIFAR-100} dataset, consisting of 60,000 color images ($32\times32$ pixels) across 100 classes grouped into 20 \textit{superclasses}, each containing five related subclasses (e.g., \textit{large carnivores}, \textit{vehicles}, \textit{trees}). The dataset is split into 50,000 training and 10,000 test images.
+
+Data loading and preprocessing were handled using PyTorch utilities. Images were converted to tensors, normalized, and organized into training and test loaders for efficient batching during training and evaluation.
+
+To illustrate the dataset’s structure, a visualization of three superclasses and their corresponding five subclasses was created (Figure~\ref{fig:cifar100_visualization}). This helps highlight the intra-class variability and visual diversity present in CIFAR-100.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/classes-sample.pdf}
+    \caption{Sample visualization of three CIFAR-100 superclasses and their five subclasses. Each row corresponds to one superclass, and each column shows an example from its subclasses.}
+    \label{fig:cifar100_visualization}
+\end{figure}
+
+
+\subsection{Network Architectures}
+
+Two architectures were implemented to compare dense and convolutional representations on CIFAR-100: a fully connected \textbf{TwoLayerNet} and a LeNet-5–inspired \textbf{ConvNet}. Both were trained under identical settings for fair evaluation.
+
+\subsubsection{TwoLayerNet}
+
+The \textbf{TwoLayerNet} is a baseline fully connected model operating on flattened image vectors of size $32\times32\times3=3072$.  
+It consists of two linear layers with a ReLU activation in between:
+\[
+3072 \xrightarrow{\text{ReLU}} H \xrightarrow{} 100.
+\]
+The model ignores spatial structure, treating pixels independently, and thus serves as a benchmark for assessing the benefit of convolutional feature extraction.  
+A summary of its architecture is shown in Figure~\ref{fig:two_layer_summary}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\linewidth]{figures/two-layer-arch.pdf}
+    \caption{Architecture of the \textbf{TwoLayerNet}.}
+    \label{fig:two_layer_summary}
+\end{figure}
+
+\subsubsection{ConvNet}
+
+The \textbf{ConvNet} follows the classical \textit{LeNet-5} design, adapted for CIFAR-100.  
+It uses three convolutional layers with \textbf{Tanh} activations and $2\times2$ \textbf{average pooling}, followed by two fully connected layers.  
+The data flow is summarized as:
+\[
+3\times32\times32 \rightarrow 6\times14\times14 \rightarrow 16\times5\times5 \rightarrow 120\times1\times1.
+\]
+The flattened output passes through two dense layers (120 $\rightarrow$ 84 $\rightarrow$ 100), producing class logits.  
+The final layer (\textbf{F6}) contains:
+\[
+\text{Parameters} = (84 \times 100) + 100 = 8{,}500.
+\]
+By leveraging local connectivity and weight sharing, the ConvNet captures spatial patterns efficiently while using relatively few parameters.  
+Its layer summary is shown in Figure~\ref{fig:convnet_summary}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\linewidth]{figures/conv-net-arch.pdf}
+    \caption{Architecture of the \textbf{ConvNet} with Tanh activations and average pooling.}
+    \label{fig:convnet_summary}
+\end{figure}
+
+
+\subsection{Training Setup}
+
+All experiments were implemented in PyTorch using the \textbf{CIFAR-100} dataset, split into 90\% training, 10\% validation, and the standard test set for evaluation.
+
+\subsubsection{Data Preprocessing and Augmentation}
+
+To improve generalization, training images were augmented with random horizontal flips ($p=0.5$), random crops ($32\times32$ with $4$-pixel padding), and mild color jittering (brightness, contrast, saturation $\pm0.2$).  
+All images were converted to tensors and normalized per channel using mean and standard deviation $(0.5, 0.5, 0.5)$:
+\[
+\text{Normalize}(x) = \frac{x - 0.5}{0.5}.
+\]
+Validation and test images were only normalized.  
+All transformations used \texttt{torchvision.transforms}.
+
+\subsubsection{Training Configuration}
+
+Both \textbf{TwoLayerNet} and \textbf{ConvNet} were trained using the \textbf{Adam optimizer} (learning rate $10^{-3}$, weight decay $10^{-4}$) with \textbf{cross-entropy loss}.  
+Training ran for up to 50 epochs with a batch size of 64 and \textbf{early stopping} after five stagnant validation epochs.  
+The best-performing model was saved automatically. Training for the \textbf{TwoLayerNet} ended after six epochs, showing it quickly reached its capacity and could not further improve.
+
+\subsubsection{Evaluation Protocol}
+
+The best model was evaluated on the test set using overall and class-wise accuracy:
+\[
+\text{Accuracy} = \frac{\text{Correct Predictions}}{\text{Total Samples}} \times 100\%.
+\]
+
+
+% ============================================================
+% EXPERIMENTS
+% ============================================================
+\section{Experiments and Results}
+
+\subsection{Hyperparameter Tuning}
+
+Hyperparameter optimization was performed using the \textbf{Optuna} framework, which applies a sequential model-based search and prunes low-performing trials early based on validation accuracy.
+
+\subsubsection{Optimization Procedure}
+
+For each architecture, Optuna sampled hyperparameter combinations from predefined ranges and trained the model for a fixed number of epochs.  
+Underperforming trials were pruned using the \textit{MedianPruner} after three warm-up epochs to save computation.  
+Each trial trained a model, evaluated its validation accuracy, and reported results back to Optuna to guide the search.  
+A total of 50 trials were conducted per model, aiming to maximize validation accuracy on CIFAR-100.
+
+\subsubsection{Search Space}
+
+Both training and augmentation parameters were explored, along with architectural hyperparameters for the convolutional model.  
+Table~\ref{tab:hyperparam_search} summarizes the main hyperparameters and their ranges.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Search Range} \\
+\midrule
+Learning rate ($\eta$) & \{1e-4, 5e-4, 1e-3, 5e-3\} \\
+Weight decay & \{1e-6, 1e-5, 1e-4, 5e-4\} \\
+Batch size & \{64, 128\} \\
+Optimizer & \{Adam, SGD\} \\
+Epochs & \{15–40\} \\
+Hidden size (TwoLayerNet) & \{256, 512, 1024\} \\
+Brightness / Contrast / Saturation & \{0.1–0.4\} \\
+Horizontal flip probability & \{0.3–0.7\} \\
+ConvNet filters $(C_1, C_2, C_3)$ & \{(6–16), (16–48), (64–120)\} \\
+ConvNet kernel sizes $(K_1, K_2, K_3)$ & \{3, 5\} \\
+\bottomrule
+\end{tabular}
+\caption{Search ranges for Optuna hyperparameter tuning.}
+\label{tab:hyperparam_search}
+\end{table}
+
+\subsubsection{Best Hyperparameters}
+
+After 50 trials, the best \textbf{TwoLayerNet} achieved a validation accuracy of \textbf{17.50\%} with:
+\[
+\eta = 1\times10^{-4}, \quad
+\text{Weight decay} = 1\times10^{-5}, \quad
+\text{Batch size} = 128, \quad
+\text{Optimizer} = \text{Adam}, \quad
+H = 1024.
+\]
+
+For the \textbf{ConvNet}, the best configuration (validation accuracy \textbf{29.48\%}) was obtained with:
+\[
+\eta = 1\times10^{-3}, \quad
+\text{Weight decay} = 1\times10^{-4}, \quad
+\text{Batch size} = 64, \quad
+\text{Optimizer} = \text{Adan},
+\]
+\[
+(C_1, C_2, C_3) = (8, 32, 96), \quad
+(K_1, K_2, K_3) = (3, 5, 1).
+\]
+
+The most effective augmentation for both models used moderate color jittering (brightness $0.3$, contrast $0.2$, saturation $0.2$) and a horizontal flip probability of $0.3$.  
+The final models were retrained using these parameters for consistent and reproducible results.
+
+
+\subsection{Improved Architectures}
+
+To extend the baseline models, deeper variants were implemented with additional layers, normalization, and regularization to improve feature learning and generalization.
+
+\subsubsection{TwoLayerExtendedNet}
+
+The \textbf{TwoLayerExtendedNet} expands the baseline fully connected model to four layers with progressively smaller hidden dimensions:
+\[
+3072 \;\rightarrow\; H \;\rightarrow\; \tfrac{H}{2} \;\rightarrow\; \tfrac{H}{4} \;\rightarrow\; 100.
+\]
+Each hidden layer uses a \textbf{LeakyReLU} activation to avoid dead neurons, followed by \textbf{Dropout} ($p=0.3$) for regularization.  
+This deeper design captures more complex non-linear patterns in the flattened image representation.  
+The architecture is shown in Figure~\ref{fig:two_layer_extended_summary}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\linewidth]{figures/two-layer-extended-arch.pdf}
+    \caption{Architecture of the \textbf{TwoLayerExtendedNet} with four fully connected layers and dropout regularization.}
+    \label{fig:two_layer_extended_summary}
+\end{figure}
+
+\subsubsection{ConvExtendedNet}
+
+The \textbf{ConvExtendedNet} adds one convolutional block and a deeper classifier to the baseline LeNet-style model.  
+It includes four convolutional layers and three dense layers, each convolutional layer followed by \textbf{BatchNorm}, \textbf{ReLU}, and $2\times2$ \textbf{max-pooling}.  
+The final block uses a $1\times1$ convolution to increase feature depth without expanding spatial size:
+\[
+3\times32\times32 \;\rightarrow\; 16\times14\times14 \;\rightarrow\; 32\times5\times5 \;\rightarrow\; 64\times1\times1 \;\rightarrow\; 120\times1\times1.
+\]
+The fully connected classifier (120 $\rightarrow$ 84 $\rightarrow$ 64 $\rightarrow$ 100) applies dropout ($p=0.3$) between layers.  
+These additions enhance representational capacity while maintaining parameter efficiency through convolutional weight sharing.  
+Figure~\ref{fig:convnet_extended_summary} illustrates the structure.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\linewidth]{figures/conv-extended-net-arch.pdf}
+    \caption{Architecture of the \textbf{ConvExtendedNet} with added convolutional and dense layers, batch normalization, and dropout.}
+    \label{fig:convnet_extended_summary}
+\end{figure}
+
+\subsection{Results on CIFAR-100}
+
+All models were evaluated on the CIFAR-100 test set using identical preprocessing and normalization settings.  
+Performance was measured by overall and per-superclass accuracy across the 20 predefined superclasses (e.g., \textit{aquatic mammals}, \textit{flowers}, \textit{vehicles 1}).  
+The goal was to assess the effect of convolutional feature extraction, hyperparameter tuning, and architectural extensions.
+
+\subsubsection{Overall Performance}
+
+Table~\ref{tab:cifar100_overall_results} reports the test accuracies for all models.  
+Convolutional architectures clearly outperform fully connected ones, confirming the benefits of spatial feature learning.  
+Further gains were achieved after hyperparameter tuning and architectural extensions, with the extended ConvNet reaching the best performance.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lc}
+\toprule
+\textbf{Model} & \textbf{Test Accuracy (\%)} \\
+\midrule
+TwoLayerNet              & 10.41 \\
+ConvNet                  & 28.42 \\
+TwoLayerNetFt            & 14.97 \\
+ConvNetFt                & 29.52 \\
+TwoLayerExtendedNet      & 17.43 \\
+ConvExtendedNet          & \textbf{37.63} \\
+\bottomrule
+\end{tabular}
+\caption{Overall CIFAR-100 test accuracy (\%) for all models.}
+\label{tab:cifar100_overall_results}
+\end{table}
+
+\subsubsection{Per-Superclass Analysis}
+
+Table~\ref{tab:cifar100_superclass_results} shows accuracies across the 20 CIFAR-100 superclasses.  
+Convolutional networks consistently achieve higher scores, especially for visually consistent classes such as animals and vehicles.  
+Fully connected models perform relatively better on texture-dominated classes (e.g., \textit{flowers} or \textit{food containers}) but fail to capture complex spatial relationships.
+
+\begin{table}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Superclass} & \textbf{TwoLayerNet} & \textbf{ConvNet} & \textbf{TwoLayerNetFt} & \textbf{ConvNetFt} & \textbf{TwoLayerExtendedNet} & \textbf{ConvExtendedNet} \\
+\midrule
+Aquatic mammals     & 02.60 & 15.80 & 06.80 & 19.60 & 14.60 & \textbf{22.80} \\
+Fish                & 18.80 & 31.40 & 22.80 & 29.20 & 21.40 & \textbf{40.60} \\
+Flowers             & 24.60 & 42.40 & 30.80 & 41.00 & 34.60 & \textbf{52.40} \\
+Food containers     & 11.20 & 25.80 & 12.20 & 32.40 & 20.00 & \textbf{45.20} \\
+Fruit and vegetables& 25.40 & 33.80 & 22.80 & 40.00 & 26.00 & \textbf{41.60} \\
+Household electrical devices & 02.80 & 06.20 & 25.80 & 24.00 & 08.00 & \textbf{32.40} \\
+Household furniture & 14.60 & 38.00 & 08.60 & 34.00 & 17.20 & \textbf{41.40} \\
+Insects             & 04.80 & 31.60 & 17.00 & 30.00 & 25.60 & \textbf{39.20} \\
+Large carnivores    & 00.80 & 22.60 & 08.00 & 25.00 & 09.40 & \textbf{36.20} \\
+Large man-made outdoor things & 22.40 & 45.40 & 28.20 & 47.60 & 31.60 & \textbf{54.20} \\
+Large natural outdoor scenes & 12.80 & 44.80 & 27.20 & 47.40 & 33.80 & \textbf{60.20} \\
+Large omnivores and herbivores & 06.80 & 27.40 & 13.40 & 32.40 & 18.40 & \textbf{33.80} \\
+Medium-sized mammals & 05.40 & 22.40 & 13.40 & 22.80 & 12.00 & \textbf{33.00} \\
+Non-insect invertebrates & 04.00 & 14.40 & 13.80 & 13.40 & 04.00 & \textbf{20.00} \\
+People              & 03.20 & 14.80 & 09.20 & \textbf{15.40} & 06.80 & 14.20 \\
+Reptiles            & 00.40 & 16.00 & 05.40 & 11.00 & 03.60 & \textbf{22.60} \\
+Small mammals       & 02.40 & 14.00 & 04.60 & 11.40 & 05.00 & \textbf{15.20} \\
+Trees               & 23.00 & 36.60 & 30.40 & 38.60 & 25.60 & \textbf{45.20} \\
+Vehicles 1          & 06.80 & 28.80 & 06.80 & 33.00 & 12.20 & \textbf{45.40} \\
+Vehicles 2          & 15.40 & 39.60 & 11.80 & 42.20 & 18.80 & \textbf{57.00} \\
+\bottomrule
+\end{tabular}
+}
+\caption{Per-superclass accuracy (\%) on CIFAR-100 test set.}
+\label{tab:cifar100_superclass_results}
+\end{table}
+
+
+\subsection{Fine-Tuning on STL-10}
+
+To evaluate the transferability of learned features, the pretrained \textbf{ConvNet} (trained on CIFAR-100) was fine-tuned on a five-class subset of \textbf{STL-10}: \textit{bird}, \textit{deer}, \textit{dog}, \textit{horse}, and \textit{monkey}.  
+Figure~\ref{fig:stl10_samples} shows representative samples.
+
+\subsubsection{Dataset Preparation}
+
+STL-10 images ($96\times96$) were resized to $32\times32$ for compatibility with the pretrained ConvNet.  
+Training images were augmented with random flips, cropping (padding=4), and mild color jittering, while validation and test sets were only normalized.  
+A 90/10 train–validation split was used.
+
+\subsubsection{Transfer Learning Setup}
+
+The final layer of the CIFAR-100 \textbf{ConvNet} was replaced with a new fully connected layer ($84 \rightarrow 5$).  
+All other weights were fine-tuned using the \textbf{Adam optimizer} ($\eta=10^{-4}$, weight decay $10^{-5}$) for up to 30 epochs with early stopping (patience=5).  
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/classes-stl10.pdf}
+    \caption{Examples from the five STL-10 classes used for fine-tuning.}
+    \label{fig:stl10_samples}
+\end{figure}
+
+\subsubsection{Training Performance}
+
+Figure~\ref{fig:stl10_learning_curves} shows training and validation curves.  
+The model converged smoothly, plateauing after about 20 epochs, and achieved a test accuracy of \textbf{46.92\%}. 
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/stl10-learning-curves.pdf}
+    \caption{Training and validation loss curves for the fine-tuned ConvNet.}
+    \label{fig:stl10_learning_curves}
+\end{figure}
+
+\subsubsection{Feature Visualization with t-SNE}
+
+A 2D \textbf{t-SNE} embedding was generated from the penultimate layer (\texttt{fc1}) activations, after PCA reduction to 50 components and standardization.  
+A subset of 2000 test samples was visualized (Figure~\ref{fig:stl10_tsne}).  
+Class clusters are generally well separated, with partial overlap among visually similar animal classes, reflecting shared textures and shapes.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/t-sne-stl10.pdf}
+    \caption{t-SNE visualization of feature embeddings from the fine-tuned ConvNet on the STL-10 subset.}
+    \label{fig:stl10_tsne}
+\end{figure}
+
+\end{document}
