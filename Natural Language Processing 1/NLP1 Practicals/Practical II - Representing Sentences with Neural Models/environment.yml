@@ -1,0 +1,13 @@
+name: nlp-env
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - matplotlib
+  - nltk
+  - numpy
+  - scikit-learn
+  - scipy
+  - tqdm
+  - ipykernel
+prefix: C:\Users\ippok\anaconda3\envs\nlp-env
