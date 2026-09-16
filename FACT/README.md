@@ -1,0 +1,1 @@
+The project for the "Fairness, Accountability, Confidentiality and Transparency in AI" course is available [here](https://github.com/ipantelidis/bilinear-mlp-repro).
