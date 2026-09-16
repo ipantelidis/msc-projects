@@ -1,0 +1,1 @@
+The project for the "Deep Learning 2" course is available [here](https://github.com/ipantelidis/Hi-LeWM).
