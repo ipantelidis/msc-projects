@@ -1,0 +1,1 @@
+The project for the "AI for Medical Imaging" course is available [here](https://github.com/ipantelidis/medical-segmentation).
